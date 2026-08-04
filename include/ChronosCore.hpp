@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <fstream>
 #include <iostream>
+#include <thread>
+#include <future>
 
 namespace Chronos {
 
@@ -71,6 +73,35 @@ namespace Chronos {
             }
         }
 
+        // Worker task to search a specific window interval range
+        void search_segment_worker(size_t startBase, size_t endBase, uint64_t queryData, uint64_t queryMask, size_t queryLen, std::vector<size_t>& localMatches) const {
+            for (size_t i = startBase; i <= endBase; ++i) {
+                size_t wordIdx = i / 32;
+                size_t subBitOffset = (i % 32) * 2;
+
+                if (wordIdx >= sequenceWords.size()) break;
+
+                // Micro-optimized bit-shifting register lookups
+                uint64_t combinedWindow = 0;
+                if (subBitOffset + (queryLen * 2) <= 64) {
+                    combinedWindow = sequenceWords[wordIdx].data >> subBitOffset;
+                } else {
+                    uint64_t firstPart = sequenceWords[wordIdx].data >> subBitOffset;
+                    uint64_t secondPart = 0;
+                    if (wordIdx + 1 < sequenceWords.size()) {
+                        secondPart = sequenceWords[wordIdx + 1].data << (64 - subBitOffset);
+                    }
+                    combinedWindow = firstPart | secondPart;
+                }
+
+                // Bitwise mask comparison (Auto-vectorizes efficiently under compiler flags)
+                if ((combinedWindow & queryMask) == queryData) {
+                    localMatches.push_back(i);
+                }
+            }
+        }
+
+        // Multi-threaded parallel query execution engine
         std::vector<size_t> find_exact_matches(const std::string& query) const {
             std::vector<size_t> indicesFound;
             if (query.empty() || totalBasesParsed < query.length()) return indicesFound;
@@ -84,29 +115,39 @@ namespace Chronos {
             }
 
             size_t queryLen = query.length();
+            size_t maxLimit = totalBasesParsed - queryLen;
 
-            for (size_t i = 0; i <= totalBasesParsed - queryLen; ++i) {
-                size_t wordIdx = i / 32;
-                size_t subBitOffset = (i % 32) * 2;
+            // Determine core worker distribution limits
+            unsigned int threadsCount = std::thread::hardware_concurrency();
+            if (threadsCount == 0) threadsCount = 2; // Fail-safe metric for notebook architecture
+            if (maxLimit < 1000) threadsCount = 1;   // Avoid thread overhead costs for small sample tracks
 
-                if (wordIdx >= sequenceWords.size()) break;
+            if (threadsCount == 1) {
+                search_segment_worker(0, maxLimit, queryData, queryMask, queryLen, indicesFound);
+                return indicesFound;
+            }
 
-                uint64_t combinedWindow = 0;
+            std::vector<std::thread> searchThreads;
+            std::vector<std::vector<size_t>> workerResults(threadsCount);
+            size_t chunkSize = maxLimit / threadsCount;
 
-                if (subBitOffset + (queryLen * 2) <= 64) {
-                    combinedWindow = sequenceWords[wordIdx].data >> subBitOffset;
-                } else {
-                    uint64_t firstPart = sequenceWords[wordIdx].data >> subBitOffset;
-                    uint64_t secondPart = 0;
-                    if (wordIdx + 1 < sequenceWords.size()) {
-                        secondPart = sequenceWords[wordIdx + 1].data << (64 - subBitOffset);
-                    }
-                    combinedWindow = firstPart | secondPart;
-                }
+            for (unsigned int t = 0; t < threadsCount; ++t) {
+                size_t start = t * chunkSize;
+                size_t end = (t == threadsCount - 1) ? maxLimit : (start + chunkSize - 1);
 
-                if ((combinedWindow & queryMask) == queryData) {
-                    indicesFound.push_back(i);
-                }
+                searchThreads.push_back(std::thread(
+                    &SearchMatrix::search_segment_worker, this,
+                    start, end, queryData, queryMask, queryLen, std::ref(workerResults[t])
+                ));
+            }
+
+            // Sync structural threads and collect split fragments
+            for (auto& th : searchThreads) {
+                if (th.joinable()) th.join();
+            }
+
+            for (const auto& localList : workerResults) {
+                indicesFound.insert(indicesFound.end(), localList.begin(), localList.end());
             }
 
             return indicesFound;
