@@ -16,6 +16,6 @@
 ## Phase 3: Hardware Acceleration & Scale (Current)
 - [x] Integrate multi-threaded file slicing blocks (`std::async` ingestion chunks).
 - [x] Implement asynchronous parallel search chunk partition routines (`std::thread`).
-- [/] Enable high-velocity `-mavx2` native hardware SIMD vector loops via compiler flags.
-- [ ] Develop a high-speed WebAssembly bridge compilation target (`deploy.sh`).
+- [x] Enable high-velocity `-mavx2` native hardware SIMD vector loops via compiler flags.
+- [x] Develop a high-speed WebAssembly bridge compilation target (`deploy.sh`).
 
