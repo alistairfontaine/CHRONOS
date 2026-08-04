@@ -14,6 +14,7 @@ chronos-cli
 *~
 .DS_Store
 
-# Native Development Dumps
+# Native Development & Test Outputs
 *.log
-*.chronos_temp
+tests/*.chronos_temp
+tests/*.chronos

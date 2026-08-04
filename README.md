@@ -1,5 +1,9 @@
 # CHRONOS
 
+<p align="center">
+  <img src="assets/banner.png" alt="CHRONOS Banner" width="100%">
+</p>
+
 A zero-dependency, cache-aligned Genomic Sequence Search Matrix engineered in native C++17 to bypass cloud-computing overheads during viral mutation analysis.
 
 ## The Problem
@@ -11,4 +15,17 @@ Modern genomic search systems parse nucleotide sequences (`A, C, G, T`) using bl
 ## System Map
 - **Core Engine:** Header-only genomic indexing layout (`include/ChronosCore.hpp`).
 - **Control Interface:** High-velocity Command Line Interface (`src/main.cpp`).
-- **Binary Descriptor Mapping:** Custom `.chronos` high-density genomic index file arrays.
+- **Storage Subsystem:** High-density, serialized bit arrays (`.chronos`).
+- **Verification Environment:** Dedicated local system tests (`tests/`).
+
+## Local System Operations
+
+### 1. Ingest Raw FASTA and Serialise to Binary Database
+```bash
+./chronos-cli --save tests/test_sequence.fasta tests/target_genome.chronos
+```
+
+### 2. High-Velocity Match Operations Off the Compressed File
+```bash
+./chronos-cli --load tests/target_genome.chronos ATCG
+```
