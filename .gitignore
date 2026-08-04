@@ -1,0 +1,19 @@
+# Compiled Binary Targets
+bin/
+build/
+*.out
+*.exe
+*.o
+*.obj
+chronos-cli
+
+# Editor Configuration Tracks
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Native Development Dumps
+*.log
+*.chronos_temp

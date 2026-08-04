@@ -1,0 +1,4 @@
+*.chronos binary
+*.cpp text
+*.hpp text
+*.md text
