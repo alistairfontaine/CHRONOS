@@ -13,80 +13,82 @@ void parse_fasta_file(const std::string& filepath, Chronos::SearchMatrix& matrix
 
     std::string line;
     std::string currentSequence = "";
-    size_t headersEncountered = 0;
-
-    std::cout << "[Parser] Reading FASTA file records...\n";
 
     while (std::getline(file, line)) {
         if (line.empty()) continue;
-
-        // Skip metadata comment line nodes commonly found in FASTA dumps
         if (line[0] == '>') {
-            headersEncountered++;
             if (!currentSequence.empty()) {
                 matrix.import_raw_sequence(currentSequence);
                 currentSequence.clear();
             }
-            std::cout << "[Record] Target Domain: " << line.substr(1, 40) << "...\n";
         } else {
             currentSequence += line;
         }
     }
-
-    // Flush any remaining sequence tail segments
     if (!currentSequence.empty()) {
         matrix.import_raw_sequence(currentSequence);
     }
 }
 
 int main(int argc, char* argv[]) {
-    std::cout << "CHRONOS Genomic Search Matrix v1.0.0 Alpha\n";
-    std::cout << "-------------------------------------------\n";
+    std::cout << "CHRONOS Genomic Search Matrix v1.0.0 Phase 2\n";
+    std::cout << "--------------------------------------------\n";
 
-    if (argc < 3) {
-        std::cerr << "Usage Error: " << argv[0] << " <fasta_file_path> <search_query_sequence>\n";
-        std::cerr << "Example:     " << argv[0] << " ebola.fasta ATCG\n";
+    if (argc >= 2 && std::string(argv[1]) == "--test") {
+        return Chronos::run_unit_tests() ? 0 : 1;
+    }
+
+    if (argc < 4) {
+        std::cerr << "Usage Error: " << argv[0] << " <mode> <input_file> <query>\n";
+        std::cerr << "Modes available:\n";
+        std::cerr << "  --scan  : Ingest FASTA raw file, parse pattern string.\n";
+        std::cerr << "  --save  : Ingest FASTA raw file, compress directly into a cached .chronos matrix file.\n";
+        std::cerr << "  --load  : Skip FASTA translation completely. Load .chronos file, parse pattern string.\n";
         return 1;
     }
 
-    std::string filepath = argv[1];
-    std::string query = argv[2];
+    std::string mode = argv[1];
+    std::string filepath = argv[2];
+    std::string query = argv[3];
 
     try {
         Chronos::SearchMatrix matrix;
 
-        auto startTime = std::chrono::high_resolution_clock::now();
-        parse_fasta_file(filepath, matrix);
-        auto parsedTime = std::chrono::high_resolution_clock::now();
+        if (mode == "--scan" || mode == "--save") {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            parse_fasta_file(filepath, matrix);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            std::cout << "[Parser] FASTA file ingested in "
+                      << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms.\n";
 
-        std::cout << "\n[Metrics] Sequence Importer Processing Stats:\n";
-        std::cout << " -> Total Base Pairs Loaded: " << matrix.get_total_bases() << " bases.\n";
-        std::cout << " -> Allocated Memory Words:  " << matrix.get_word_count() << " (64-bit words).\n";
-
-        auto d1 = std::chrono::duration_cast<std::chrono::milliseconds>(parsedTime - startTime).count();
-        std::cout << " -> Ingestion Performance:   " << d1 << " ms\n\n";
-
-        std::cout << "[Matrix] Executing sliding bitwise search loop for: " << query << "\n";
-
-        auto scanStart = std::chrono::high_resolution_clock::now();
-        std::vector<size_t> results = matrix.find_exact_matches(query);
-        auto scanEnd = std::chrono::high_resolution_clock::now();
-
-        auto d2 = std::chrono::duration_cast<std::chrono::microseconds>(scanEnd - scanStart).count();
-
-        std::cout << "[Results] Matrix Search Calculations Finished:\n";
-        std::cout << " -> Total Exact Matches Found: " << results.size() << "\n";
-        std::cout << " -> Core Execution Latency:    " << d2 << " microseconds (µs)\n";
-
-        if (!results.empty()) {
-            std::cout << " -> Initial Match Indices:     ";
-            size_t displayCount = std::min(results.size(), size_t(5));
-            for (size_t i = 0; i < displayCount; ++i) {
-                std::cout << results[i] << " ";
+            if (mode == "--save") {
+                matrix.export_to_binary(query); // Treat 3rd argument as the out file path
+                return 0;
             }
-            if (results.size() > 5) std::cout << "...";
-            std::cout << "\n";
         }
+        else if (mode == "--load") {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            matrix.load_from_binary(filepath);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            std::cout << "[Loader] Cached binary loaded in "
+                      << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() << " µs.\n";
+        }
+        else {
+            std::cerr << "Unknown mode identifier passed.\n";
+            return 1;
+        }
+
+        // Execute Search Loop Optimization Verification
+        std::cout << "[Engine] Vectoring sliding search bitmask for pattern: " << query << "\n";
+        auto s0 = std::chrono::high_resolution_clock::now();
+        std::vector<size_t> matches = matrix.find_exact_matches(query);
+        auto s1 = std::chrono::high_resolution_clock::now();
+
+        std::cout << "[Results] Processing Metrics:\n";
+        std::cout << " -> System Total Size: " << matrix.get_total_bases() << " bases.\n";
+        std::cout << " -> Matches Discovered: " << matches.size() << "\n";
+        std::cout << " -> Computational Latency: "
+                  << std::chrono::duration_cast<std::chrono::microseconds>(s1 - s0).count() << " µs\n";
 
     } catch (const std::exception& e) {
         std::cerr << "Fatal runtime calculation failure: " << e.what() << "\n";
