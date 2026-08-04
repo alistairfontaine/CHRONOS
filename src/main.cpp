@@ -5,6 +5,19 @@
 #include <vector>
 #include <chrono>
 
+#include <future>
+
+// Async worker chunk parsing routine
+Chronos::SearchMatrix async_parse_worker(std::vector<std::string> linesChunk) {
+    Chronos::SearchMatrix localMatrix;
+    std::string consolidated = "";
+    for (const auto& line : linesChunk) {
+        consolidated += line;
+    }
+    localMatrix.import_raw_sequence(consolidated);
+    return localMatrix;
+}
+
 void parse_fasta_file(const std::string& filepath, Chronos::SearchMatrix& matrix) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -12,21 +25,37 @@ void parse_fasta_file(const std::string& filepath, Chronos::SearchMatrix& matrix
     }
 
     std::string line;
-    std::string currentSequence = "";
+    std::vector<std::string> chunkBuffer;
+    std::vector<std::future<Chronos::SearchMatrix>> workerPool;
+    const size_t CHUNK_THRESHOLD_LINES = 10000; // Line scaling optimization limit
+
+    std::cout << "[Runtime] Initiating asynchronous chunk processing pipeline...\n";
 
     while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        if (line[0] == '>') {
-            if (!currentSequence.empty()) {
-                matrix.import_raw_sequence(currentSequence);
-                currentSequence.clear();
-            }
-        } else {
-            currentSequence += line;
+        if (line.empty() || line[0] == '>') continue; // Safely skip label metadata boundaries
+
+        chunkBuffer.push_back(line);
+
+        if (chunkBuffer.size() >= CHUNK_THRESHOLD_LINES) {
+            // Deploy an autonomous worker task to balance thread load
+            workerPool.push_back(std::async(std::launch::async, async_parse_worker, chunkBuffer));
+            chunkBuffer.clear();
         }
     }
-    if (!currentSequence.empty()) {
-        matrix.import_raw_sequence(currentSequence);
+
+    // Flush remainder task block items
+    if (!chunkBuffer.empty()) {
+        workerPool.push_back(std::async(std::launch::async, async_parse_worker, chunkBuffer));
+    }
+
+    // Collect thread states and merge segments back into the main matrix storage block
+    for (auto& task : workerPool) {
+        Chronos::SearchMatrix localResult = task.get();
+
+        if (localResult.get_total_bases() > 0) {
+            // Extract the packed words and total base count from the future result
+            matrix.append_raw_components(localResult.get_internal_words(), localResult.get_total_bases());
+        }
     }
 }
 

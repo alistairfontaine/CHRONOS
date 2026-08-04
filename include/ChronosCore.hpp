@@ -156,6 +156,21 @@ namespace Chronos {
             std::cout << "[Loader] Successfully restored array view from binary cache file.\n";
         }
 
+        // Thread-safe raw append function for async worker access loops
+        void merge_matrix_buffer(const std::vector<GenomicWord>& words, size_t bases) {
+            sequenceWords.insert(sequenceWords.end(), words.begin(), words.end());
+            totalBasesParsed += bases;
+        }
+
+        // Expose internal fields through a safe public merge routine
+        void append_raw_components(const std::vector<GenomicWord>& words, size_t bases) {
+            sequenceWords.insert(sequenceWords.end(), words.begin(), words.end());
+            totalBasesParsed += bases;
+        }
+
+        // Add accessor methods so workers can share internal components cleanly
+        const std::vector<GenomicWord>& get_internal_words() const { return sequenceWords; }
+
         void clear() {
             sequenceWords.clear();
             totalBasesParsed = 0;
